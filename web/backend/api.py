@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import copy
 import json
 import re
 import shutil
@@ -39,6 +40,7 @@ from codex_session_patcher.core import (
 )
 from codex_session_patcher.core.patcher import clean_session_jsonl, save_session_jsonl
 from codex_session_patcher.core.sqlite_adapter import OpenCodeDBAdapter, DEFAULT_OPENCODE_DB
+from codex_session_patcher.core.antigravity_adapter import sync_antigravity_conversation_store
 from codex_session_patcher.ctf_config.status import expand_user_path, default_antigravity_prompt_path
 from codex_session_patcher import __version__
 
@@ -575,8 +577,37 @@ def patch_session(file_path: str, mock_response: str = MOCK_RESPONSE,
 
     detector = RefusalDetector(custom_keywords)
 
+    def _collect_text_replacements(
+        original_lines: list[dict],
+        final_lines: list[dict],
+        fmt: SessionFormat,
+    ) -> list[tuple[str, str]]:
+        """Collect exact assistant-text replacements for secondary stores."""
+        if fmt != SessionFormat.ANTIGRAVITY:
+            return []
+        strategy = get_format_strategy(fmt)
+        final_by_line = {
+            line.get('_line_num', index + 1): line
+            for index, line in enumerate(final_lines)
+            if isinstance(line, dict)
+        }
+        pairs = []
+        for index, original in enumerate(original_lines):
+            if not isinstance(original, dict):
+                continue
+            line_num = original.get('_line_num', index + 1)
+            final = final_by_line.get(line_num)
+            if not final:
+                continue
+            old_text = strategy.extract_text_content(original)
+            new_text = strategy.extract_text_content(final)
+            if old_text and new_text and old_text != new_text:
+                pairs.append((old_text, new_text))
+        return pairs
+
     try:
         backup_path = None
+        sync_result = None
 
         # OpenCode: SQLite 处理
         if session_format == SessionFormat.OPENCODE and session_id:
@@ -612,6 +643,7 @@ def patch_session(file_path: str, mock_response: str = MOCK_RESPONSE,
 
             parser = SessionParser(session_format=session_format)
             lines = parser.parse_session_jsonl(file_path)
+            original_lines = copy.deepcopy(lines)
 
             cleaned_lines, modified, core_changes = clean_session_jsonl(
                 lines, detector, show_content=True,
@@ -630,6 +662,14 @@ def patch_session(file_path: str, mock_response: str = MOCK_RESPONSE,
 
             save_session_jsonl(cleaned_lines, file_path)
 
+            if session_format == SessionFormat.ANTIGRAVITY:
+                text_replacements = _collect_text_replacements(original_lines, cleaned_lines, session_format)
+                sync_result = sync_antigravity_conversation_store(
+                    file_path,
+                    text_replacements,
+                    create_backup=create_backup,
+                )
+
         # 转换为 API ChangeDetail
         api_changes = []
         for c in core_changes:
@@ -645,9 +685,18 @@ def patch_session(file_path: str, mock_response: str = MOCK_RESPONSE,
                 replacement=c.new_content,
             ))
 
+        message = "会话清理完成"
+        if sync_result and sync_result.db_path:
+            if sync_result.updated:
+                message += f"；已同步 Antigravity UI 数据库 {sync_result.fields_updated} 处"
+            elif sync_result.error:
+                message += f"；Antigravity UI 数据库同步失败: {sync_result.error}"
+            else:
+                message += "；未发现需要同步的 Antigravity UI 数据库内容"
+
         return PatchResponse(
             success=True,
-            message="会话清理完成",
+            message=message,
             backup_path=backup_path,
             changes=api_changes,
         )

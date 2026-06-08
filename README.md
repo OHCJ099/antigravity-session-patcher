@@ -4,6 +4,7 @@ Antigravity Desktop 专用版 session-patcher。基于 codex-session-patcher / R
 
 - 扫描 Antigravity Desktop 会话日志：`~/.gemini/antigravity/brain/**/.system_generated/logs/transcript.jsonl`
 - 清理/替换会话中的拒绝回复，移除 `thinking/reasoning` 字段
+- 同步写入 Antigravity UI 实际读取的 `~/.gemini/antigravity/conversations/<id>.db` SQLite/protobuf 数据
 - CTF/渗透 Profile 模式：写入当前 Antigravity 工作区 `.agent/rules/ctf_optimized.md`
 - CTF/渗透全局模式：把 `.agent/rules/ctf_global_optimized.md` 镜像到所有已知 Antigravity 工作区
 - Web UI、桌面快捷方式、一键启动脚本
@@ -47,10 +48,12 @@ description: CTF/pentest sandbox instructions managed by antigravity-session-pat
 
 Profile 模式只影响当前/最近识别到的工作区。全局模式会同步到所有已知工作区；如果新建了工作区，重新点一次“启用全局”即可补写 rule。
 
+会话 patch 时，Antigravity 版会同时更新 transcript.jsonl 与对应 `conversations/<trajectory_id>.db` 中的 protobuf blob。这样网页提示“修改成功”后，Antigravity Desktop UI 读取到的也会是已替换后的内容；写入前会自动备份 DB。
+
 ## 测试
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
-当前验证结果：`91 passed, 25 skipped`。
+当前验证结果：`94 passed, 25 skipped`。

@@ -9,5 +9,6 @@
 
 Antigravity 专用能力：
 - 扫描 `~/.gemini/antigravity/brain` 下的 transcript.jsonl。
+- patch 时同步 `~/.gemini/antigravity/conversations/<id>.db`，确保 Antigravity UI 生效。
 - Profile 模式写入当前项目 `.agent/rules/ctf_optimized.md`。
 - 全局模式把 `.agent/rules/ctf_global_optimized.md` 镜像到所有已知 Antigravity 工作区。

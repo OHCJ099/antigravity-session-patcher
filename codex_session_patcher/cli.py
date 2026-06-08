@@ -7,6 +7,7 @@ from __future__ import annotations
 import os
 import sys
 import argparse
+import copy
 import shutil
 from datetime import datetime
 
@@ -25,6 +26,8 @@ from .core import (
 )
 from .core.patcher import save_session_jsonl
 from .core.sqlite_adapter import DEFAULT_OPENCODE_DB
+from .core.formats import get_format_strategy
+from .core.antigravity_adapter import sync_antigravity_conversation_store
 
 DEFAULT_CONFIG_FILE = os.path.join(
     os.environ.get("APPDATA", os.path.expanduser("~")),
@@ -428,6 +431,7 @@ def main():
         except Exception as e:
             print(f'  读取失败: {e}')
             continue
+        original_lines = copy.deepcopy(lines)
 
         cleaned_lines, modified, changes = clean_session_jsonl(
             lines, detector, show_content=args.show_content,
@@ -455,6 +459,32 @@ def main():
 
         # 保存修改
         save_session_jsonl(cleaned_lines, session.path)
+        if session.format == SessionFormat.ANTIGRAVITY:
+            strategy = get_format_strategy(session.format)
+            final_by_line = {
+                line.get('_line_num', idx + 1): line
+                for idx, line in enumerate(cleaned_lines)
+                if isinstance(line, dict)
+            }
+            text_replacements = []
+            for idx, original in enumerate(original_lines):
+                line_num = original.get('_line_num', idx + 1)
+                final = final_by_line.get(line_num)
+                if not final:
+                    continue
+                old_text = strategy.extract_text_content(original)
+                new_text = strategy.extract_text_content(final)
+                if old_text and new_text and old_text != new_text:
+                    text_replacements.append((old_text, new_text))
+            sync_result = sync_antigravity_conversation_store(
+                session.path,
+                text_replacements,
+                create_backup=not args.no_backup,
+            )
+            if sync_result.updated:
+                print(f'  Antigravity UI DB 同步: {sync_result.fields_updated} 处')
+            elif sync_result.error:
+                print(f'  Antigravity UI DB 同步失败: {sync_result.error}')
         print(f'  已保存修改')
         total_modified += 1
 

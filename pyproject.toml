@@ -1,6 +1,6 @@
 [project]
 name = "codex-session-patcher-antigravity"
-version = "1.5.4+antigravity.1"
+version = "1.5.4+antigravity.2"
 description = "AI coding session cleaner adapted for Antigravity Desktop, Codex, Claude Code, and OpenCode"
 readme = "README.md"
 requires-python = ">=3.8"
